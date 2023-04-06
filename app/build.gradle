@@ -20,6 +20,9 @@ buildscript {
 plugins {
     // Apply the application plugin to add support for building a CLI application in Java.
     id 'application'
+    id "java-test-fixtures"
+    id "java"
+    id "com.github.johnrengelman.shadow" version "2.0.2"
 }
 
 repositories {
@@ -34,23 +37,45 @@ java {
 }
 
 dependencies {
-    // Use JUnit Jupiter for testing.
-    testImplementation 'org.junit.jupiter:junit-jupiter:5.9.1'
+    annotationProcessor "org.immutables:value:2.9.2"
 
-    // This dependency is used by the application.
-    implementation 'com.google.guava:guava:31.1-jre'
+    compileOnly "org.immutables:builder:2.9.2"
+    compileOnly "org.immutables:value:2.9.2"
+
+    implementation "com.google.guava:guava:31.1-jre"
+    implementation "network.idu.acapy:aries-client-python:0.7.33"
+    implementation "com.squareup.retrofit2:retrofit:2.9.0"
+    implementation "com.squareup.retrofit2:converter-jackson:2.9.0"
+
+    implementation "io.jsonwebtoken:jjwt-api:0.11.5"
+    runtimeOnly "io.jsonwebtoken:jjwt-impl:0.11.5"
+    runtimeOnly "io.jsonwebtoken:jjwt-jackson:0.11.5"
+
+    implementation "io.vertx:vertx-core:4.4.0"
+    implementation "io.vertx:vertx-web:4.4.0"
+    implementation "io.vertx:vertx-web-client:4.4.0"
+    implementation "io.vertx:vertx-mongo-client:4.4.0"
+
+    implementation "org.slf4j:slf4j-api:2.0.6"
+    implementation "org.slf4j:slf4j-reload4j:2.0.7"
+
+    testRuntimeOnly "io.netty:netty-all:4.1.90.Final"
+    testImplementation "org.junit.jupiter:junit-jupiter-api:5.9.2"
+    testImplementation "org.junit.jupiter:junit-jupiter-params:5.9.2"
+    testImplementation "org.mockito:mockito-junit-jupiter:5.1.1"
+    testImplementation "io.vertx:vertx-junit5:4.4.0"
+    testImplementation "com.squareup.okhttp3:mockwebserver:5.0.0-alpha.11"
+    testFixturesImplementation "io.jsonwebtoken:jjwt-api:0.11.5"
+    testRuntimeOnly "io.jsonwebtoken:jjwt-impl:0.11.5"
+    testRuntimeOnly "io.jsonwebtoken:jjwt-jackson:0.11.5"
 }
 
-application {
-    // Define the main class for the application.
-    mainClass = 'nsf.service.provider.controller.App'
-}
-
-tasks.named('test') {
+test {
     // Use JUnit Platform for unit tests.
     useJUnitPlatform()
 }
 
 application {
-    mainClass = "nsf.service.provider.controller.App"
+    // Define the main class for the application.
+    mainClass = 'nsf.service.provider.controller.App'
 }
