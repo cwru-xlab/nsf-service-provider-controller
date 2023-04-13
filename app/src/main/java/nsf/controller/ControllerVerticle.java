@@ -9,12 +9,12 @@ import io.vertx.ext.web.Router;
 import io.vertx.ext.web.RoutingContext;
 import io.vertx.ext.web.handler.BodyHandler;
 import org.hyperledger.acy_py.generated.model.InvitationRecord;
+import org.hyperledger.acy_py.generated.model.V10CredentialExchange;
+import org.hyperledger.acy_py.generated.model.V20CredExRecord;
 import org.hyperledger.aries.AriesClient;
 import org.hyperledger.aries.api.connection.ConnectionRecord;
-import org.hyperledger.aries.api.out_of_band.CreateInvitationFilter;
-import org.hyperledger.aries.api.out_of_band.InvitationCreateRequest;
-import org.hyperledger.aries.api.out_of_band.InvitationMessage;
-import org.hyperledger.aries.api.out_of_band.ReceiveInvitationFilter;
+import org.hyperledger.aries.api.issue_credential_v2.V2CredentialExchangeFree;
+import org.hyperledger.aries.api.out_of_band.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -61,9 +61,23 @@ public class ControllerVerticle extends AbstractVerticle {
         // TODO: create out of bound invitation
         InvitationCreateRequest invitationCreateRequest = InvitationCreateRequest.builder().build();
         try {
+
+//            V10CredentialExchange exchange_record = V10CredentialExchange.builder().autoIssue(Boolean.TRUE).build();
+//            System.out.println(exchange_record.getCredentialExchangeId());
+            // TODO: i like have no idea how to issue credential ex ID
+            V20CredExRecord credExRecord = V20CredExRecord.builder().autoIssue(Boolean.TRUE).build();
+            System.out.println(credExRecord.getCredExId());
             Optional<InvitationRecord> optionalInvitationRecord = ariesClient.outOfBandCreateInvitation(
-                    invitationCreateRequest,
-                    CreateInvitationFilter.builder().build()
+                    InvitationCreateRequest.builder()
+                            .usePublicDid(Boolean.TRUE)
+                            .attachment(AttachmentDef.builder()
+                                    .id(credExRecord.getCredExId())
+                                    .type(AttachmentDef.AttachmentType.CREDENTIAL_OFFER)
+                                    .build())
+                            .build(),
+                    CreateInvitationFilter.builder()
+                            .autoAccept(Boolean.TRUE)
+                            .build()
             );
             InvitationRecord invitationRecord = optionalInvitationRecord.orElseThrow(() -> new IOException("Did not initiate " +
                     "ACA-Py connection."));
