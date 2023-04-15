@@ -4,6 +4,9 @@ import com.google.gson.Gson;
 import com.google.gson.reflect.TypeToken;
 import io.vertx.core.AbstractVerticle;
 import io.vertx.core.Promise;
+import io.vertx.core.http.HttpClient;
+import io.vertx.core.http.HttpClientRequest;
+import io.vertx.core.http.HttpMethod;
 import io.vertx.core.json.JsonObject;
 import io.vertx.ext.web.Router;
 import io.vertx.ext.web.RoutingContext;
@@ -20,6 +23,7 @@ import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.lang.reflect.Type;
+import java.util.Arrays;
 import java.util.Optional;
 
 public class ControllerVerticle extends AbstractVerticle {
@@ -38,6 +42,7 @@ public class ControllerVerticle extends AbstractVerticle {
         router.route().handler(BodyHandler.create());
 
         router.get("/create-invitation").handler(this::createInvitation);
+        router.post("/webhook/topic/basicmessages").handler(this::BasicMessageHandler);
 
 //    int port = config().getInteger("http.port", 8080); // TODO CONFIG
         int port = 8080;
@@ -58,23 +63,18 @@ public class ControllerVerticle extends AbstractVerticle {
      * message, and progresses the state of the connection.
      */
     private void createInvitation(RoutingContext ctx){
-        // TODO: create out of bound invitation
-        InvitationCreateRequest invitationCreateRequest = InvitationCreateRequest.builder().build();
+        InvitationCreateRequest invitationCreateRequest = InvitationCreateRequest.builder()
+                .accept(Arrays.asList("didcomm/aip1", "didcomm/aip2;env=rfc19"))
+//                            .alias("Barry")
+                .handshakeProtocols(Arrays.asList("did:sov:BzCbsNYhMrjHiqZDTUASHg;spec/didexchange/1.0"))
+                .metadata(new JsonObject())
+//                            .myLabel("Invitation to Barry")
+                .protocolVersion("1.1")
+                .usePublicDid(false)
+                .build();
         try {
-
-//            V10CredentialExchange exchange_record = V10CredentialExchange.builder().autoIssue(Boolean.TRUE).build();
-//            System.out.println(exchange_record.getCredentialExchangeId());
-            // TODO: i like have no idea how to issue credential ex ID
-            V20CredExRecord credExRecord = V20CredExRecord.builder().autoIssue(Boolean.TRUE).build();
-            System.out.println(credExRecord.getCredExId());
             Optional<InvitationRecord> optionalInvitationRecord = ariesClient.outOfBandCreateInvitation(
-                    InvitationCreateRequest.builder()
-                            .usePublicDid(Boolean.TRUE)
-                            .attachment(AttachmentDef.builder()
-                                    .id(credExRecord.getCredExId())
-                                    .type(AttachmentDef.AttachmentType.CREDENTIAL_OFFER)
-                                    .build())
-                            .build(),
+                    invitationCreateRequest,
                     CreateInvitationFilter.builder()
                             .autoAccept(Boolean.TRUE)
                             .build()
@@ -83,12 +83,33 @@ public class ControllerVerticle extends AbstractVerticle {
                     "ACA-Py connection."));
             JsonObject jsonObject = new JsonObject().put("invitationId", invitationRecord.getInvitationId()).put("url", invitationRecord.getInvitationUrl());
             ctx.response().send(jsonObject.encode());
-            ctx.response().setStatusCode(200).end();
+//            ctx.response().setStatusCode(200).end();
 
         } catch (IOException e) {
             logger.error("Failed to generate invitation.", e);
             ctx.response().setStatusCode(500).end();
             throw new RuntimeException(e);
         }
+    }
+
+
+    /**
+     * Handles receival of basic message and sends the message to the required destination
+     */
+    private void BasicMessageHandler(RoutingContext ctx){
+        JsonObject message = ctx.body().asJsonObject();
+        // TODO: handle message: https://vertx.io/docs/vertx-core/java/#_writing_request_headers
+        // Get an async object to control the completion of the test
+        HttpClient client = vertx.createHttpClient();
+        client.request(HttpMethod.POST, "user/sign", response -> {
+            HttpClientRequest request =response.result();
+            request.putHeader("content-length", "1000");
+            request.putHeader("content-type", "application/x-www-form-urlencoded");
+            request.write(message.encode());
+            request.end();
+//            System.out.println("Some callback " + response.result()..statusCode());
+        });
+
+
     }
 }
