@@ -1,7 +1,5 @@
 package nsf.controller;
 
-import com.google.gson.Gson;
-import com.google.gson.reflect.TypeToken;
 import io.vertx.core.AbstractVerticle;
 import io.vertx.core.Promise;
 import io.vertx.core.http.HttpClient;
@@ -12,17 +10,13 @@ import io.vertx.ext.web.Router;
 import io.vertx.ext.web.RoutingContext;
 import io.vertx.ext.web.handler.BodyHandler;
 import org.hyperledger.acy_py.generated.model.InvitationRecord;
-import org.hyperledger.acy_py.generated.model.V10CredentialExchange;
-import org.hyperledger.acy_py.generated.model.V20CredExRecord;
 import org.hyperledger.aries.AriesClient;
-import org.hyperledger.aries.api.connection.ConnectionRecord;
-import org.hyperledger.aries.api.issue_credential_v2.V2CredentialExchangeFree;
-import org.hyperledger.aries.api.out_of_band.*;
+import org.hyperledger.aries.api.out_of_band.CreateInvitationFilter;
+import org.hyperledger.aries.api.out_of_band.InvitationCreateRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
-import java.lang.reflect.Type;
 import java.util.Arrays;
 import java.util.Optional;
 
@@ -45,7 +39,7 @@ public class ControllerVerticle extends AbstractVerticle {
         router.post("/webhook/topic/basicmessages").handler(this::BasicMessageHandler);
 
 //    int port = config().getInteger("http.port", 8080); // TODO CONFIG
-        int port = 8080;
+        int port = 8081;
         vertx.createHttpServer()
                 .requestHandler(router)
                 .listen(port)

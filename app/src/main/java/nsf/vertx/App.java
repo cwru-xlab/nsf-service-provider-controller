@@ -2,14 +2,11 @@ package nsf.vertx;
 
 import io.vertx.core.Context;
 import io.vertx.core.Vertx;
-import io.vertx.core.VertxOptions;
 import nsf.controller.ControllerVerticle;
 import org.apache.log4j.BasicConfigurator;
 import org.apache.log4j.Level;
 import org.apache.log4j.Logger;
 import org.hyperledger.aries.AriesClient;
-
-import java.util.function.Consumer;
 
 public class App {
 
