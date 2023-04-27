@@ -18,6 +18,7 @@ import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.util.Arrays;
+import java.util.LinkedHashMap;
 import java.util.Optional;
 
 public class ControllerVerticle extends AbstractVerticle {
@@ -92,16 +93,19 @@ public class ControllerVerticle extends AbstractVerticle {
      */
     private void BasicMessageHandler(RoutingContext ctx){
         JsonObject message = ctx.body().asJsonObject();
+        JsonObject heart_rate_data = new JsonObject(message.getString("content"));
         // TODO: handle message: https://vertx.io/docs/vertx-core/java/#_writing_request_headers
         // Get an async object to control the completion of the test
+        // TODO: this only sends stress_score
+        JsonObject data = heart_rate_data.getJsonArray("score_data").getJsonObject(0);
         HttpClient client = vertx.createHttpClient();
-        client.request(HttpMethod.POST, 8000, "localhost", "/api/stress_score", response -> {
+        client.request(HttpMethod.POST, 8000, "localhost", "/api/stress_score/", response -> {
             HttpClientRequest request = response.result();
             request.response().onSuccess(final_response -> {
                 System.out.println("Received response with status code " + final_response.statusCode());
             });
-            request.putHeader("content-type", "json");
-            request.end(message.getString("content"));
+            request.putHeader("Content-Type", "application/json");
+            request.end(data.encode());
         });
 
 
