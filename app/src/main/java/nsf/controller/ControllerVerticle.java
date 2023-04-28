@@ -96,8 +96,6 @@ public class ControllerVerticle extends AbstractVerticle {
         JsonObject heart_rate_data = new JsonObject(message.getString("content"));
         // TODO: handle message: https://vertx.io/docs/vertx-core/java/#_writing_request_headers
         // Get an async object to control the completion of the test
-        // TODO: this only sends stress_score
-        JsonObject data = heart_rate_data.getJsonArray("score_data").getJsonObject(0);
         HttpClient client = vertx.createHttpClient();
         client.request(HttpMethod.POST, 8000, "localhost", "/api/stress_score/", response -> {
             HttpClientRequest request = response.result();
@@ -105,7 +103,7 @@ public class ControllerVerticle extends AbstractVerticle {
                 System.out.println("Received response with status code " + final_response.statusCode());
             });
             request.putHeader("Content-Type", "application/json");
-            request.end(data.encode());
+            request.end(heart_rate_data.encode());
         });
 
 
