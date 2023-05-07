@@ -20,7 +20,7 @@ public class App {
 
         AriesClient ariesClient = AriesClient
                 .builder()
-                .url("http://localhost:8021")
+                .url(System.getenv().getOrDefault("AGENT_URL", "http://localhost:8021"))
                 //.apiKey("secret") // TODO AUTH (low priority)
                 .build();
 
