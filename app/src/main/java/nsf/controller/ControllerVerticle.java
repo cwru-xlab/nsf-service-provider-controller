@@ -103,7 +103,11 @@ public class ControllerVerticle extends AbstractVerticle {
         // TODO: handle message: https://vertx.io/docs/vertx-core/java/#_writing_request_headers
         // Get an async object to control the completion of the test
         HttpClient client = vertx.createHttpClient();
-        client.request(HttpMethod.POST, 8000, "localhost", "/api/stress_score/", response -> {
+        int port = Integer.parseInt(System.getenv().getOrDefault("BACKEND_API_PORT", "8000"));
+        String host = System.getenv().getOrDefault("BACKEND_API_HOST", "localhost");
+        client.request(HttpMethod.POST, port,
+            host,
+            "/api/stress_score/", response -> {
             HttpClientRequest request = response.result();
             request.response().onSuccess(final_response -> {
                 System.out.println("Received response with status code " + final_response.statusCode());
