@@ -8,6 +8,8 @@ import io.vertx.core.http.HttpMethod;
 import io.vertx.core.json.JsonObject;
 import io.vertx.ext.web.Router;
 import io.vertx.ext.web.RoutingContext;
+import io.vertx.ext.web.client.WebClient;
+import io.vertx.ext.web.client.predicate.ResponsePredicate;
 import io.vertx.ext.web.handler.BodyHandler;
 import org.hyperledger.acy_py.generated.model.InvitationRecord;
 import org.hyperledger.aries.AriesClient;
@@ -92,30 +94,41 @@ public class ControllerVerticle extends AbstractVerticle {
      * Handles receival of basic message and sends the message to the required destination
      */
     private void BasicMessageHandler(RoutingContext ctx){
+        System.out.println("Received basic message...");
         JsonObject message = ctx.body().asJsonObject();
 
         String user_connection_id = message.getString("connection_id");
         JsonObject pushed_data = new JsonObject(message.getString("content"));
+        String stress_score_date_timestamp = pushed_data.getJsonObject("stress-score-data").getString("timestamp");
         JsonObject json_body_to_send = new JsonObject()
             .put("connection_id", user_connection_id)
+            .put("date_time", stress_score_date_timestamp)
             .put("data", pushed_data);
-
+        System.out.println("Sending stress score to backend..." + json_body_to_send.toString());
         // TODO: handle message: https://vertx.io/docs/vertx-core/java/#_writing_request_headers
         // Get an async object to control the completion of the test
-        HttpClient client = vertx.createHttpClient();
+        //HttpClient client = vertx.createHttpClient();
+        WebClient client = WebClient.create(vertx);
         int port = Integer.parseInt(System.getenv().getOrDefault("BACKEND_API_PORT", "8000"));
         String host = System.getenv().getOrDefault("BACKEND_API_HOST", "localhost");
-        client.request(HttpMethod.POST, port,
-            host,
-            "/api/stress_score/", response -> {
-            HttpClientRequest request = response.result();
-            request.response().onSuccess(final_response -> {
-                System.out.println("Received response with status code " + final_response.statusCode());
+        client.post(port, host, "/api/stress_score/")
+            .expect(ResponsePredicate.JSON)
+            .sendJsonObject(json_body_to_send)
+            .onSuccess(res -> {
+                System.out.println("Received response with status code " + res.statusCode());
+                System.out.println("Received response: " + res.bodyAsString());
+            })
+            .onFailure(err -> {
+                System.out.println("ERROR SENDING TO BACKEND " + err.getMessage());
             });
-            request.putHeader("Content-Type", "application/json");
-            request.end(json_body_to_send.encode());
-        });
 
-
+//         response -> {
+//                    HttpClientRequest request = response.result();
+//                    request.response().onSuccess(final_response -> {
+//                        System.out.println("Received response with status code " + final_response.statusCode());
+//                    });
+//                    request.putHeader("Content-Type", "application/json");
+//                    request.end(json_body_to_send.encode());
+//                }
     }
 }
