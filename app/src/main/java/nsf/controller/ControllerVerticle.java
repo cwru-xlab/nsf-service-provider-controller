@@ -97,7 +97,7 @@ public class ControllerVerticle extends AbstractVerticle {
         String user_connection_id = message.getString("connection_id");
         JsonObject pushed_data = new JsonObject(message.getString("content"));
         JsonObject json_body_to_send = new JsonObject()
-            .put("connection-id", user_connection_id)
+            .put("connection_id", user_connection_id)
             .put("data", pushed_data);
 
         // TODO: handle message: https://vertx.io/docs/vertx-core/java/#_writing_request_headers
