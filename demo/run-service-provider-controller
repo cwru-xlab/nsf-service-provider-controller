@@ -1,0 +1,9 @@
+#!/bin/bash
+# Builds and runs the user controller with Docker.
+
+echo "Building docker image..."
+# Build the docker image and exit if it fails:
+docker build -t nsf-user-controller -f ./Dockerfile .. || exit 1
+
+# Run docker with args for removing container on exit, interactive mode, port publishing:
+docker run --rm --name nsf_user_controller -it -p 0.0.0.0:8081:8081 nsf-user-controller
