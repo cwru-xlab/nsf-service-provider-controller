@@ -93,7 +93,13 @@ public class ControllerVerticle extends AbstractVerticle {
      */
     private void BasicMessageHandler(RoutingContext ctx){
         JsonObject message = ctx.body().asJsonObject();
-        JsonObject heart_rate_data = new JsonObject(message.getString("content"));
+
+        String user_connection_id = message.getString("connection_id");
+        JsonObject pushed_data = new JsonObject(message.getString("content"));
+        JsonObject json_body_to_send = new JsonObject()
+            .put("connection-id", user_connection_id)
+            .put("data", pushed_data);
+
         // TODO: handle message: https://vertx.io/docs/vertx-core/java/#_writing_request_headers
         // Get an async object to control the completion of the test
         HttpClient client = vertx.createHttpClient();
@@ -103,7 +109,7 @@ public class ControllerVerticle extends AbstractVerticle {
                 System.out.println("Received response with status code " + final_response.statusCode());
             });
             request.putHeader("Content-Type", "application/json");
-            request.end(heart_rate_data.encode());
+            request.end(json_body_to_send.encode());
         });
 
 
