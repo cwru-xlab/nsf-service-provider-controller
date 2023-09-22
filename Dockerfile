@@ -7,6 +7,8 @@ WORKDIR /app
 # Copy the source code to the container
 COPY . .
 
+RUN gradle shadowJar --no-daemon
+
 # Base image
 FROM openjdk:16-oracle
 
