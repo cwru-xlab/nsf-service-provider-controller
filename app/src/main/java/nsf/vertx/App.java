@@ -2,6 +2,8 @@ package nsf.vertx;
 
 import io.vertx.core.Context;
 import io.vertx.core.Vertx;
+import io.vertx.ext.mongo.MongoClient;
+import nsf.MongoDbHelper;
 import nsf.controller.ControllerVerticle;
 import org.apache.log4j.BasicConfigurator;
 import org.apache.log4j.Level;
@@ -26,8 +28,9 @@ public class App {
 
         Context context = vertx.getOrCreateContext();
         context.runOnContext(v -> {
+            MongoClient mongoClient = MongoDbHelper.getMongoClient(vertx);
 
-            vertx.deployVerticle(new ControllerVerticle(ariesClient));
+            vertx.deployVerticle(new ControllerVerticle(mongoClient, ariesClient));
         });
 
     }
