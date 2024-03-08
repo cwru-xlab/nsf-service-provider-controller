@@ -31,6 +31,7 @@ public class ControllerVerticle extends AbstractVerticle {
     // TODO DI
     private final MongoClient mongoClient;
     private final String INVITATIONS_COLLECTION = "invitations";
+    private final String PARTICIPANTS_COLLECTION = "participants";
     private final AriesClient ariesClient;
 
     public ControllerVerticle(MongoClient mongoClient, AriesClient ariesClient) {
@@ -71,6 +72,8 @@ public class ControllerVerticle extends AbstractVerticle {
             }
         });
 
+        router.get("/participants").handler(this::listParticipants);
+
         router.get("/invitations").handler(this::listInvitations);
         router.post("/invitations").handler(this::createInvitation);
         router.delete("/invitations/:invitationId").handler(this::deleteInvitation);
@@ -97,12 +100,24 @@ public class ControllerVerticle extends AbstractVerticle {
         try{
             JsonObject message = ctx.body().asJsonObject();
 
-            String user_connection_id = message.getString("connection_id");
+            // Docs: https://aca-py.org/latest/features/AdminAPI/#pairwise-connection-record-updated-connections
+            String userConnectionId = message.getString("connection_id");
             String state = message.getString("state");
+            String invitationKey = message.getString("invitation_key");
 
-            logger.info("connection updated: " + user_connection_id + ", " + state);
+            logger.info("connection updated: " + userConnectionId + ", " + state);
 
             // TODO respond with details like name, description, access requests, etc.
+            if (state.equals("completed")){
+
+                JsonObject document = new JsonObject()
+                        .put("_id", userConnectionId)
+                        .put("createdAt", LocalDateTime.now().toString())
+                        .put("invitationKey", invitationKey);
+                mongoClient.save(PARTICIPANTS_COLLECTION, document);
+
+                logger.info("added participant: " + userConnectionId);
+            }
 
             ctx.response().setStatusCode(200).end();
         }
@@ -125,6 +140,29 @@ public class ControllerVerticle extends AbstractVerticle {
         catch(Exception e){
             ctx.response().setStatusCode(500).end();
         }
+    }
+
+    private void listParticipants(RoutingContext ctx){
+        JsonObject query = new JsonObject();
+        mongoClient.find(PARTICIPANTS_COLLECTION, query)
+                .onSuccess(participants -> {
+
+//                    // Append the name of the invitation that the participant used to connect, for each participant:
+//                    for (var participant : participants){
+//                        String invitationName = "";
+//
+//                        mongoClient.find(PARTICIPANTS_COLLECTION, query).onSuccess(participants -> {
+//
+//                        });
+//
+//                        participant.put("invitationName", invitationName);
+//                    }
+
+                    ctx.response().send(new JsonArray(participants).encode());
+                })
+                .onFailure(e -> {
+                    ctx.response().setStatusCode(500).end();
+                });
     }
 
     private void listInvitations(RoutingContext ctx){
@@ -178,8 +216,9 @@ public class ControllerVerticle extends AbstractVerticle {
             var invitationRecord = createAriesInvitation(temporaryKey);
             String url = invitationRecord.getInvitationUrl();
 
+            // Some relevant fields are only in the ConnectionRecord and not the InvitationRecord, so we get the ConnectionRecord:
             var invitationConnectionQuery = ariesClient.connections(ConnectionFilter.builder().alias(temporaryKey).build());
-            if (!invitationConnectionQuery.isPresent() || invitationConnectionQuery.get().size() != 1){
+            if (invitationConnectionQuery.isEmpty() || invitationConnectionQuery.get().size() != 1){
                 logger.error("failed to find the invitation connection record.");
                 ctx.response().setStatusCode(500).end();
                 return;
@@ -188,7 +227,9 @@ public class ControllerVerticle extends AbstractVerticle {
             var invitationConnection = invitationConnectionQuery.get().get(0);
 
             JsonObject document = new JsonObject()
-                    .put("_id", invitationConnection.getConnectionId())
+                    .put("_id", invitationConnection.getInvitationKey())
+                    .put("invitationKey", invitationConnection.getInvitationKey())
+                    .put("invitationConnId", invitationConnection.getConnectionId())
                     .put("invitationMsgId", invitationRecord.getInviMsgId())
                     .put("name", name)
                     .put("createdAt", LocalDateTime.now().toString())
