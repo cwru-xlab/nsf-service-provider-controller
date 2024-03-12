@@ -16,6 +16,7 @@ import org.hyperledger.aries.AriesClient;
 import org.hyperledger.aries.api.connection.ConnectionFilter;
 import org.hyperledger.aries.api.out_of_band.CreateInvitationFilter;
 import org.hyperledger.aries.api.out_of_band.InvitationCreateRequest;
+import org.hyperledger.aries.api.present_proof.PresentProofRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -23,6 +24,7 @@ import java.io.IOException;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.Arrays;
+import java.util.Map;
 import java.util.Optional;
 
 public class ControllerVerticle extends AbstractVerticle {
@@ -83,6 +85,7 @@ public class ControllerVerticle extends AbstractVerticle {
         router.post("/webhook/topic/basicmessages").handler(this::BasicMessageHandler);
         router.post("/webhook/topic/connections").handler(this::connectionsUpdateHandler);
         router.post("/webhook/topic/out_of_band").handler(this::outOfBandHandler);
+        router.post("/webhook/topic/present_proof").handler(this::presentProofUpdate);
 
         int port = Integer.parseInt(System.getenv().getOrDefault("PORT", "8081"));
         vertx.createHttpServer()
@@ -96,6 +99,36 @@ public class ControllerVerticle extends AbstractVerticle {
                 .onFailure(promise::fail);
     }
 
+    private void presentProofUpdate(RoutingContext ctx){
+        try{
+            JsonObject message = ctx.body().asJsonObject();
+
+            logger.info("present_proof updated: " + message.encodePrettily());
+
+            String userConnectionId = message.getString("connection_id");
+            String state = message.getString("state");
+            String initiator = message.getString("initiator");
+
+            if (initiator.equals("self") && state.equals("verified")){
+                var connectionOptional = ariesClient.connectionsGetById(userConnectionId);
+                var connection = connectionOptional.orElseThrow();
+
+                JsonObject document = new JsonObject()
+                    .put("_id", userConnectionId)
+                    .put("createdAt", LocalDateTime.now().toString())
+                    .put("invitationKey", connection.getInvitationKey());
+                mongoClient.save(PARTICIPANTS_COLLECTION, document);
+
+                logger.info("added participant: " + userConnectionId);
+            }
+
+            ctx.response().setStatusCode(200).end();
+        }
+        catch(Exception e){
+            ctx.response().setStatusCode(500).end();
+        }
+    }
+
     private void connectionsUpdateHandler(RoutingContext ctx){
         try{
             JsonObject message = ctx.body().asJsonObject();
@@ -103,20 +136,30 @@ public class ControllerVerticle extends AbstractVerticle {
             // Docs: https://aca-py.org/latest/features/AdminAPI/#pairwise-connection-record-updated-connections
             String userConnectionId = message.getString("connection_id");
             String state = message.getString("state");
-            String invitationKey = message.getString("invitation_key");
 
-            logger.info("connection updated: " + userConnectionId + ", " + state);
+            logger.info("connection updated: " + userConnectionId + ", " + state + " - " + message.encodePrettily());
 
             // TODO respond with details like name, description, access requests, etc.
-            if (state.equals("completed")){
+            if (state.equals("active")){
+                logger.info("connection completed, requesting present_proof: " + userConnectionId);
 
-                JsonObject document = new JsonObject()
-                        .put("_id", userConnectionId)
-                        .put("createdAt", LocalDateTime.now().toString())
-                        .put("invitationKey", invitationKey);
-                mongoClient.save(PARTICIPANTS_COLLECTION, document);
+                JsonObject serverBannerData = new JsonObject()
+                    .put("name", "Demo Service Provider")
+                    .put("desc", "Example service provider for M.S. project prototype implementation demo. Requires BC Gov demo credential to connect.");
 
-                logger.info("added participant: " + userConnectionId);
+                ariesClient.presentProofSendRequest(PresentProofRequest.builder()
+                        .connectionId(userConnectionId)
+                        .autoVerify(true)
+                        .proofRequest(PresentProofRequest.ProofRequest.builder()
+                            .name(serverBannerData.encode())
+                            .requestedAttributes(Map.of(
+                                "issued_referent",
+                                PresentProofRequest.ProofRequest.ProofRequestedAttributes.builder()
+                                    .name("issued")
+                                    .clearRestrictions() // TODO UTyGiqDxFVe5dyboi87kp2:3:CL:439783:issuer-kit-demo
+                                    .build()))
+                            .build())
+                        .build());
             }
 
             ctx.response().setStatusCode(200).end();
