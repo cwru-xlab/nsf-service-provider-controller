@@ -1,15 +1,16 @@
 package nsf.controller;
 
 import io.vertx.core.AbstractVerticle;
+import io.vertx.core.Future;
 import io.vertx.core.Promise;
 import io.vertx.core.http.HttpMethod;
+import io.vertx.core.json.Json;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 import io.vertx.ext.mongo.MongoClient;
 import io.vertx.ext.web.Router;
 import io.vertx.ext.web.RoutingContext;
 import io.vertx.ext.web.handler.BodyHandler;
-import io.vertx.ext.web.handler.CorsHandler;
 import org.hyperledger.acy_py.generated.model.InvitationRecord;
 import org.hyperledger.acy_py.generated.model.SendMessage;
 import org.hyperledger.aries.AriesClient;
@@ -21,11 +22,11 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
-import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.Arrays;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Random;
 
 public class ControllerVerticle extends AbstractVerticle {
     private static final Logger logger = LoggerFactory.getLogger(ControllerVerticle.class);
@@ -34,7 +35,10 @@ public class ControllerVerticle extends AbstractVerticle {
     private final MongoClient mongoClient;
     private final String INVITATIONS_COLLECTION = "invitations";
     private final String PARTICIPANTS_COLLECTION = "participants";
+    private final String DATA_MENU_SETTINGS_COLLECTION = "data_menu_settings";
     private final AriesClient ariesClient;
+
+    Random random = new Random();
 
     public ControllerVerticle(MongoClient mongoClient, AriesClient ariesClient) {
         this.mongoClient = mongoClient;
@@ -80,6 +84,10 @@ public class ControllerVerticle extends AbstractVerticle {
         router.post("/invitations").handler(this::createInvitation);
         router.delete("/invitations/:invitationId").handler(this::deleteInvitation);
 
+
+        router.get("/data-menu-settings").handler(this::getDataMenuSettingsHandler);
+        router.put("/data-menu-settings").handler(this::setDataMenuSettings);
+
         router.post("/pull-data").handler(this::pullDataHandler);
 
         router.post("/webhook/topic/basicmessages").handler(this::BasicMessageHandler);
@@ -98,6 +106,127 @@ public class ControllerVerticle extends AbstractVerticle {
                 })
                 .onFailure(promise::fail);
     }
+
+
+    private void setDataMenuSettings(RoutingContext ctx){
+        var newDataMenuSettings = ctx.body().asJsonObject();
+
+        JsonObject dataMenuDoc = new JsonObject()
+            .put("_id", "data_menu_settings")
+            .put("data", newDataMenuSettings);
+
+        mongoClient.save(DATA_MENU_SETTINGS_COLLECTION, dataMenuDoc, h -> {
+            if (h.succeeded()){
+                ctx.response().setStatusCode(200).end();
+            }
+            else{
+                ctx.response().setStatusCode(500).end();
+            }
+        });
+    }
+
+    private void getDataMenuSettingsHandler(RoutingContext ctx){
+        getDataMenuSettings()
+            .onSuccess(dataMenuSettings -> {
+                ctx.response().end(dataMenuSettings.encode());
+            })
+            .onFailure(e -> {
+                ctx.response().setStatusCode(500).end();
+            });
+    }
+
+    private Future<JsonObject> getDataMenuSettings(){
+        JsonObject query = new JsonObject()
+            .put("_id", "data_menu_settings");
+        return mongoClient.find(DATA_MENU_SETTINGS_COLLECTION, query)
+            .compose(queryResults -> {
+                Promise<JsonObject> promise = Promise.promise();
+
+                if (queryResults.size() > 0){
+                    promise.complete(queryResults.get(0).getJsonObject("data"));
+                }
+                else{
+                    promise.complete(new JsonObject("""
+                        {
+                          "spotify": {
+                            "name": "Spotify",
+                            "items": {
+                              "fav-artist": {
+                                "name": "Most Played Artist"
+                              },
+                              "fav-song": {
+                                "name": "Most Played Track"
+                              },
+                              "following-artists-count": {
+                                "name": "Following Artists Count"
+                              },
+                              "following-total-count": {
+                                "name": "Following Artists & Users Count"
+                              }
+                            }
+                          },
+                          "other-example": {
+                            "name": "Other Example Source",
+                            "items": {
+                              "example": {
+                                "name": "Example Data Item"
+                              }
+                            }
+                          }
+                        }
+                        """));
+                }
+
+                return promise.future();
+            });
+    }
+
+    /**
+     * Gets the filtered user data menu view, based on what items are selected.
+     */
+    private Future<JsonObject> getUserDataMenu(){
+        return getDataMenuSettings()
+            .compose(dataMenuSettings -> {
+                Promise<JsonObject> promise = Promise.promise();
+                JsonObject userDataMenu = new JsonObject();
+
+                try{
+                    for (String dataSourceKey : dataMenuSettings.fieldNames()) {
+                        JsonObject dataSource = dataMenuSettings.getJsonObject(dataSourceKey);
+                        JsonObject dataSourceItems = dataSource.getJsonObject("items");
+
+                        for (String dataItemKey : dataSourceItems.fieldNames()) {
+                            JsonObject dataItem = dataSourceItems.getJsonObject(dataItemKey);
+                            boolean selected = dataItem.getBoolean("selected", false);
+
+                            // If selected, then add to the user data menu view:
+                            if (selected){
+                                // If the data source frame isn't there yet, then add it:
+                                if (!userDataMenu.containsKey(dataSourceKey)){
+                                    userDataMenu.put(dataSourceKey,
+                                        new JsonObject()
+                                            .put("name", dataSource.getString("name"))
+                                            .put("items", new JsonObject())
+                                    );
+                                }
+
+                                JsonObject userDataMenuSourceItems = userDataMenu
+                                    .getJsonObject(dataSourceKey)
+                                    .getJsonObject("items");
+                                userDataMenuSourceItems.put(dataItemKey, dataItem);
+                            }
+                        }
+                    }
+                }
+                catch (Exception e){
+                    logger.error(e.toString());
+                }
+
+                promise.complete(userDataMenu);
+                return promise.future();
+            });
+    }
+
 
     private void presentProofUpdate(RoutingContext ctx){
         try{
@@ -277,9 +406,15 @@ public class ControllerVerticle extends AbstractVerticle {
                     .put("name", name)
                     .put("createdAt", LocalDateTime.now().toString())
                     .put("url", url);
-            mongoClient.save(INVITATIONS_COLLECTION, document);
 
-            ctx.response().send(document.encode());
+            mongoClient.save(INVITATIONS_COLLECTION, document, h -> {
+                if (h.succeeded()){
+                    ctx.response().send(document.encode());
+                }
+                else{
+                    ctx.response().setStatusCode(500).end();
+                }
+            });
         }
         catch(Exception e){
             ctx.response().setStatusCode(500).end();
@@ -339,25 +474,80 @@ public class ControllerVerticle extends AbstractVerticle {
         }
     }
 
+    private Future<JsonObject> getInfoData(){
+        return getUserDataMenu()
+            .compose(userDataMenu -> {
+                Promise<JsonObject> promise = Promise.promise();
+                promise.complete(new JsonObject()
+                    .put("dataMenu", userDataMenu));
+                return promise.future();
+            });
+    }
+
+    private String generateMsgId(String connId){
+        return connId + "-" + String.valueOf(random.nextInt());
+    }
+    private void sendBasicMessage(String connId, String messageTypeId, JsonObject dataPayload, String messageId){
+        if (dataPayload == null){
+            dataPayload = new JsonObject();
+        }
+
+        if (messageId == null){
+            messageId = generateMsgId(connId);
+        }
+
+        JsonObject packagedJsonObj = new JsonObject()
+            .put("messageId", messageId)
+            .put("messageTypeId", messageTypeId)
+            .put("payload", dataPayload);
+
+        SendMessage basicMessageResponse = SendMessage.builder()
+            .content(packagedJsonObj.encode())
+            .build();
+
+        try {
+            ariesClient.connectionsSendMessage(connId, basicMessageResponse);
+            logger.info("sent basic message: " + basicMessageResponse.getContent());
+        } catch (IOException e) {
+            logger.error("Failed to send info response to " + connId + ": " + e.toString());
+        }
+    }
+
     /**
      * Handles receival of DIDComm basic message and sends the message to the required destination.
      */
-    private void BasicMessageHandler(RoutingContext ctx){
-        System.out.println("Received basic message...");
-        JsonObject message = ctx.body().asJsonObject();
+    private void BasicMessageHandler(RoutingContext webhookCtx){
+        JsonObject message = webhookCtx.body().asJsonObject();
 
-        String user_connection_id = message.getString("connection_id");
-        String message_type_id = message.getString("message_type_id");
-        JsonObject data_payload = new JsonObject(message.getString("content"));
+        String connId = message.getString("connection_id");
+        JsonObject basicMessagePackage = new JsonObject(message.getString("content"));
 
-        switch (message_type_id){
+//        String threadNonceId = basicMessagePackage.getString("threadNonceId");
+        String messageId = basicMessagePackage.getString("messageId");
+        String messageTypeId = basicMessagePackage.getString("messageTypeId");
+        JsonObject payloadData = basicMessagePackage.getJsonObject("payload");
+
+        logger.info("Received basic message: " + message.encodePrettily());
+
+        switch (messageTypeId){
             case "ESTABLISH_DATA_CONN_REQUEST": // a user wants to establish a connection with us.
+                break;
+            case "INFO_REQUEST": // a user wants to get the current data menu info, etc.
+                getInfoData()
+                    .onSuccess(infoData -> {
+                        sendBasicMessage(connId, "INFO_RESPONSE", infoData, messageId);
+                    });
                 break;
             case "ABANDONED_DATA_CONN": // a user left / closed a connection with us.
                 break;
             case "SHARED_DATA": // a user shared data to us.
                 break;
+            default:
+                logger.error("basic message did not match a message type: " + messageTypeId);
+                break;
         }
+
+        webhookCtx.response().setStatusCode(200).end();
 
 //        String stress_score_date_timestamp = pushed_data.getJsonObject("stress-score-data").getString("timestamp");
 //
