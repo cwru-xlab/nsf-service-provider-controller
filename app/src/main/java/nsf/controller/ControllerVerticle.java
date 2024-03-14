@@ -160,8 +160,8 @@ public class ControllerVerticle extends AbstractVerticle {
                               "following-artists-count": {
                                 "name": "Following Artists Count"
                               },
-                              "following-total-count": {
-                                "name": "Following Artists & Users Count"
+                              "spotify-subscription-level": {
+                                "name": "Spotify Subscription Level"
                               }
                             }
                           },
@@ -460,19 +460,19 @@ public class ControllerVerticle extends AbstractVerticle {
 
     }
 
-    private void sendMessageToConnection(JsonObject jsonData, String connId){
-        // Build the ACA-Py Basic Message to send:
-        SendMessage basicMessageResponse = SendMessage.builder()
-                .content(jsonData.toString())
-                .build();
-
-        // Send the Basic Message via ACA-Py client:
-        try {
-            ariesClient.connectionsSendMessage(connId, basicMessageResponse);
-        } catch (IOException e) {
-            throw new RuntimeException(e);
-        }
-    }
+//    private void sendMessageToConnection(JsonObject jsonData, String connId){
+//        // Build the ACA-Py Basic Message to send:
+//        SendMessage basicMessageResponse = SendMessage.builder()
+//                .content(jsonData.toString())
+//                .build();
+//
+//        // Send the Basic Message via ACA-Py client:
+//        try {
+//            ariesClient.connectionsSendMessage(connId, basicMessageResponse);
+//        } catch (IOException e) {
+//            throw new RuntimeException(e);
+//        }
+//    }
 
     private Future<JsonObject> getInfoData(){
         return getUserDataMenu()
@@ -513,6 +513,10 @@ public class ControllerVerticle extends AbstractVerticle {
         }
     }
 
+    private void saveSharedData(String connId, JsonObject dataSharePayload){
+        logger.info("received shared data: " + dataSharePayload.encodePrettily());
+    }
+
     /**
      * Handles receival of DIDComm basic message and sends the message to the required destination.
      */
@@ -538,9 +542,10 @@ public class ControllerVerticle extends AbstractVerticle {
                         sendBasicMessage(connId, "INFO_RESPONSE", infoData, messageId);
                     });
                 break;
-            case "ABANDONED_DATA_CONN": // a user left / closed a connection with us.
-                break;
             case "SHARED_DATA": // a user shared data to us.
+
+                break;
+            case "ABANDONED_DATA_CONN": // a user left / closed a connection with us.
                 break;
             default:
                 logger.error("basic message did not match a message type: " + messageTypeId);
