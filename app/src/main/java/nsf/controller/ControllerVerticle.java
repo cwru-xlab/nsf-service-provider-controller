@@ -22,6 +22,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
+import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.Arrays;
 import java.util.Map;
@@ -35,6 +36,7 @@ public class ControllerVerticle extends AbstractVerticle {
     private final MongoClient mongoClient;
     private final String INVITATIONS_COLLECTION = "invitations";
     private final String PARTICIPANTS_COLLECTION = "participants";
+    private final String SHARED_DATA_ITEMS_COLLECTION = "shared_data_items";
     private final String DATA_MENU_SETTINGS_COLLECTION = "data_menu_settings";
     private final AriesClient ariesClient;
 
@@ -90,12 +92,15 @@ public class ControllerVerticle extends AbstractVerticle {
 
         router.post("/pull-data").handler(this::pullDataHandler);
 
+        router.get("/collected-data").handler(this::getCollectedData);
+
+
         router.post("/webhook/topic/basicmessages").handler(this::BasicMessageHandler);
         router.post("/webhook/topic/connections").handler(this::connectionsUpdateHandler);
         router.post("/webhook/topic/out_of_band").handler(this::outOfBandHandler);
         router.post("/webhook/topic/present_proof").handler(this::presentProofUpdate);
 
-        int port = Integer.parseInt(System.getenv().getOrDefault("PORT", "8081"));
+        int port = Integer.parseInt(System.getenv().getOrDefault("PORT", "9081"));
         vertx.createHttpServer()
                 .requestHandler(router)
                 .listen(port)
@@ -105,6 +110,19 @@ public class ControllerVerticle extends AbstractVerticle {
                     promise.complete();
                 })
                 .onFailure(promise::fail);
+    }
+
+    private void getCollectedData(RoutingContext ctx){
+        JsonObject allQuery = new JsonObject();
+        mongoClient.find(SHARED_DATA_ITEMS_COLLECTION, allQuery, h -> {
+            if (h.succeeded()){
+                JsonArray response = new JsonArray(h.result());
+                ctx.response().setStatusCode(200).end(response.encode());
+            }
+            else{
+                ctx.response().setStatusCode(500).end();
+            }
+        });
     }
 
 
@@ -162,6 +180,9 @@ public class ControllerVerticle extends AbstractVerticle {
                               },
                               "spotify-subscription-level": {
                                 "name": "Spotify Subscription Level"
+                              },
+                              "demo-item": {
+                                "name": "Other Item (For Demo)"
                               }
                             }
                           },
@@ -244,9 +265,12 @@ public class ControllerVerticle extends AbstractVerticle {
 
                 JsonObject document = new JsonObject()
                     .put("_id", userConnectionId)
-                    .put("createdAt", LocalDateTime.now().toString())
+                    .put("connId", userConnectionId)
+                    .put("createdAt", Instant.now().getEpochSecond())
                     .put("invitationKey", connection.getInvitationKey());
                 mongoClient.save(PARTICIPANTS_COLLECTION, document);
+
+                sendBasicMessage(userConnectionId, "VERIFY_RESPONSE", true, null);
 
                 logger.info("added participant: " + userConnectionId);
             }
@@ -274,7 +298,7 @@ public class ControllerVerticle extends AbstractVerticle {
 
                 JsonObject serverBannerData = new JsonObject()
                     .put("name", "Demo Service Provider")
-                    .put("desc", "Example service provider for M.S. project prototype implementation demo. Requires BC Gov demo credential to connect.");
+                    .put("desc", "Example service provider for M.S. project prototype implementation demo. Requires demo credential to connect.");
 
                 ariesClient.presentProofSendRequest(PresentProofRequest.builder()
                         .connectionId(userConnectionId)
@@ -282,9 +306,9 @@ public class ControllerVerticle extends AbstractVerticle {
                         .proofRequest(PresentProofRequest.ProofRequest.builder()
                             .name(serverBannerData.encode())
                             .requestedAttributes(Map.of(
-                                "issued_referent",
+                                "DL_number_referent",
                                 PresentProofRequest.ProofRequest.ProofRequestedAttributes.builder()
-                                    .name("issued")
+                                    .name("DL_number")
                                     .clearRestrictions() // TODO UTyGiqDxFVe5dyboi87kp2:3:CL:439783:issuer-kit-demo
                                     .build()))
                             .build())
@@ -404,7 +428,7 @@ public class ControllerVerticle extends AbstractVerticle {
                     .put("invitationConnId", invitationConnection.getConnectionId())
                     .put("invitationMsgId", invitationRecord.getInviMsgId())
                     .put("name", name)
-                    .put("createdAt", LocalDateTime.now().toString())
+                    .put("createdAt", Instant.now().getEpochSecond())
                     .put("url", url);
 
             mongoClient.save(INVITATIONS_COLLECTION, document, h -> {
@@ -487,11 +511,7 @@ public class ControllerVerticle extends AbstractVerticle {
     private String generateMsgId(String connId){
         return connId + "-" + String.valueOf(random.nextInt());
     }
-    private void sendBasicMessage(String connId, String messageTypeId, JsonObject dataPayload, String messageId){
-        if (dataPayload == null){
-            dataPayload = new JsonObject();
-        }
-
+    private void sendBasicMessage(String connId, String messageTypeId, Object dataPayload, String messageId){
         if (messageId == null){
             messageId = generateMsgId(connId);
         }
@@ -507,14 +527,37 @@ public class ControllerVerticle extends AbstractVerticle {
 
         try {
             ariesClient.connectionsSendMessage(connId, basicMessageResponse);
-            logger.info("sent basic message: " + basicMessageResponse.getContent());
         } catch (IOException e) {
             logger.error("Failed to send info response to " + connId + ": " + e.toString());
         }
     }
 
-    private void saveSharedData(String connId, JsonObject dataSharePayload){
-        logger.info("received shared data: " + dataSharePayload.encodePrettily());
+    private void saveSharedData(String connId, JsonArray dataSharePayload, String messageId){
+        logger.info("Received shared data: " + dataSharePayload.encodePrettily());
+
+        JsonObject query = new JsonObject()
+            .put("_id", connId);
+        mongoClient.find(PARTICIPANTS_COLLECTION, query)
+            .onSuccess(participantResults -> {
+                if (participantResults.size() > 0){
+                    for (Object dataItemShareObject : dataSharePayload){
+                        JsonObject dataItemShare = (JsonObject)dataItemShareObject;
+                        JsonObject sharedDataItemDoc = new JsonObject()
+                            .put("participantId", connId)
+                            .put("epoch_seconds", Instant.now().getEpochSecond())
+                            .put("dataSourceId", dataItemShare.getString("dataSourceId"))
+                            .put("dataItemId", dataItemShare.getString("dataItemId"))
+                            .put("data", dataItemShare.getValue("data"));
+                        mongoClient.save(SHARED_DATA_ITEMS_COLLECTION, sharedDataItemDoc);
+                    }
+                    logger.info("Accepted shared data.");
+                    sendBasicMessage(connId, "SHARED_DATA_ACK", dataSharePayload.size(), messageId);
+                }
+                else{
+                    logger.warn("User not verified - rejecting shared data.");
+                    sendBasicMessage(connId, "SHARED_DATA_ACK", -1, messageId);
+                }
+            });
     }
 
     /**
@@ -529,9 +572,9 @@ public class ControllerVerticle extends AbstractVerticle {
 //        String threadNonceId = basicMessagePackage.getString("threadNonceId");
         String messageId = basicMessagePackage.getString("messageId");
         String messageTypeId = basicMessagePackage.getString("messageTypeId");
-        JsonObject payloadData = basicMessagePackage.getJsonObject("payload");
 
-        logger.info("Received basic message: " + message.encodePrettily());
+//        logger.info("Received basic message: " + message.encodePrettily());
+        logger.info("Received basic message: " + messageTypeId);
 
         switch (messageTypeId){
             case "ESTABLISH_DATA_CONN_REQUEST": // a user wants to establish a connection with us.
@@ -543,7 +586,8 @@ public class ControllerVerticle extends AbstractVerticle {
                     });
                 break;
             case "SHARED_DATA": // a user shared data to us.
-
+                JsonArray payloadData = basicMessagePackage.getJsonArray("payload");
+                saveSharedData(connId, payloadData, messageId);
                 break;
             case "ABANDONED_DATA_CONN": // a user left / closed a connection with us.
                 break;
