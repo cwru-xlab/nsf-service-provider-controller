@@ -24,10 +24,7 @@ import org.slf4j.LoggerFactory;
 import java.io.IOException;
 import java.time.Instant;
 import java.time.LocalDateTime;
-import java.util.Arrays;
-import java.util.Map;
-import java.util.Optional;
-import java.util.Random;
+import java.util.*;
 
 public class ControllerVerticle extends AbstractVerticle {
     private static final Logger logger = LoggerFactory.getLogger(ControllerVerticle.class);
@@ -517,6 +514,7 @@ public class ControllerVerticle extends AbstractVerticle {
         }
 
         JsonObject packagedJsonObj = new JsonObject()
+            .put("uniqueMessageId", messageId + "-" + String.valueOf(random.nextInt()))
             .put("messageId", messageId)
             .put("messageTypeId", messageTypeId)
             .put("payload", dataPayload);
@@ -560,6 +558,8 @@ public class ControllerVerticle extends AbstractVerticle {
             });
     }
 
+    HashSet<String> uniqueMessagesMap = new HashSet<>();
+
     /**
      * Handles receival of DIDComm basic message and sends the message to the required destination.
      */
@@ -568,6 +568,13 @@ public class ControllerVerticle extends AbstractVerticle {
 
         String connId = message.getString("connection_id");
         JsonObject basicMessagePackage = new JsonObject(message.getString("content"));
+
+        String uniqueMessageId = basicMessagePackage.getString("uniqueMessageId");
+        if (uniqueMessagesMap.contains(uniqueMessageId)){
+            logger.warn("Duplicate message: " + message.encodePrettily());
+            return;
+        }
+        uniqueMessagesMap.add(uniqueMessageId);
 
 //        String threadNonceId = basicMessagePackage.getString("threadNonceId");
         String messageId = basicMessagePackage.getString("messageId");
