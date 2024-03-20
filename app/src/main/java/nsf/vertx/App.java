@@ -22,7 +22,7 @@ public class App {
 
         AriesClient ariesClient = AriesClient
                 .builder()
-                .url(System.getenv().getOrDefault("AGENT_URL", "http://localhost:8021"))
+                .url(System.getenv().getOrDefault("AGENT_URL", "http://host.docker.internal:9021"))
                 //.apiKey("secret") // TODO AUTH (low priority)
                 .build();
 

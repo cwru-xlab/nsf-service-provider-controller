@@ -43,7 +43,7 @@ dependencies {
     compileOnly "org.immutables:value:2.9.2"
 
     implementation "com.google.guava:guava:31.1-jre"
-    implementation "network.idu.acapy:aries-client-python:0.7.33"
+    implementation "network.idu.acapy:aries-client-python:0.10.0"
     implementation "com.squareup.retrofit2:retrofit:2.9.0"
     implementation "com.squareup.retrofit2:converter-jackson:2.9.0"
 
